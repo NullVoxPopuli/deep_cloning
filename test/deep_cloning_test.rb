@@ -123,4 +123,30 @@ context "Deep Cloning" do
       topic.parrot != @jack.parrot
     end 
   end
+  
+  context "forcing attributes" do
+    setup do
+      clone = @jack.clone!(:force => {:pirate => {:name => "new name"}})
+    end
+    
+    should "have 'new name' as the name" do
+      "new name" == topic.name
+      topic.name != @jack.name
+    end
+  end
+  
+  context "force multiple attributes for multiple models" do
+    setup do
+      clone = @jack.clone!(:include => :parrot, 
+                           :force => {:pirate => {:name => "new name"},
+                                      :parrot => {:name => "parrot"}})
+    end
+    
+    should "have name's changed from the original names" do
+      "new name" == topic.name
+      "parrot" == topic.parrot.name
+      topic.name != @jack.name
+      topic.parrot.name != @jack.parrot.name
+    end
+  end
 end

@@ -38,7 +38,9 @@ module DeepCloning
   # @return [ActiveRecord::Base] the Object that was cloned
   def clone!(options = {})
     defaults = {:except => [:updated_at, :created_at, :id], 
-                :include => []}
+                :include => [], 
+                :force => {},
+                :remap => {}}
 
     exceptions = Array(options[:except])
     exceptions.concat(defaults[:except]) if options[:except]
@@ -50,6 +52,9 @@ module DeepCloning
     skip_attributes = options[:except] or false 
     # list of associations to copy
     associations = options[:include] or false 
+    # list of forced attributes to set
+    forced = options[:force] or false
+    
     # add current class to exclusions to prevent infinite loop
     exceptions << our_foreign_key
 
@@ -65,16 +70,37 @@ module DeepCloning
       kopy[attribute] = attributes_from_column_definition[attribute.to_s]
     } if skip_attributes
 
+    # Force attributes
+    class_name_as_symbol = kopy.class.to_s.downcase.to_sym
+    if forced
+      forced_attribute_map = forced[class_name_as_symbol]
+      if forced_attribute_map
+        forced_attribute_map.each do |attribute, value|
+          kopy.send("#{attribute}=", value)
+        end
+      end
+    end
+    
     # save before we need self's id for has_many / has_one relationships
     kopy.save_with_validation(false)
-
+    
     if options[:include]
       Array(options[:include]).each do |association, deep_associations|
         if (association.kind_of? Hash)
           deep_associations = association[association.keys.first]
           association = association.keys.first
         end
+        association_symbol = association.to_sym
+        # add our ID as a forced attribute for the nested objects
+        if !forced
+          forced = {}
+        end
+        if !forced[association_symbol]
+          forced[association_symbol] = {}
+        end
+        forced[association_symbol][our_foreign_key] = kopy[:id]
         
+        options[:force] = forced
         options.merge!({:include => deep_associations.blank? ? {} : deep_associations})
         options[:except].uniq!
 
@@ -83,7 +109,7 @@ module DeepCloning
         cloned_object = case reflected_association.macro
                         when :belongs_to, :has_one
                           ref_object = self.send(association).clone!(options)
-                          kopy.send("#{association}=", ref_object[:id])
+                          kopy.send("#{association}=", ref_object)
                           ref_object
                         when :has_many, :has_and_belongs_to_many
                           self.send(association).collect { |obj| 

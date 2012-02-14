@@ -73,10 +73,23 @@ module DeepCloning
     # Force attributes
     class_name_as_symbol = kopy.class.to_s.downcase.to_sym
     if forced
-      forced_attribute_map = forced[class_name_as_symbol]
-      if forced_attribute_map
-        forced_attribute_map.each do |attribute, value|
-          kopy.send("#{attribute}=", value)
+      general_attr = forced.map { |k, v| if (!v.is_a?(Hash)) then k end }.compact
+      specific_attr = forced.map { |k, v| if (v.is_a?(Hash)) then k end }.compact
+        
+      general_attr.each do |attribute|
+        begin
+          kopy.send("#{attribute}=", forced[attribute])
+        rescue
+          # do nothing
+        end
+      end
+      
+      specific_attr.each do |attribute|
+        if attribute == class_name_as_symbol
+          forced_attribute_map = forced[class_name_as_symbol]
+          forced_attribute_map.each do |attribute, value|
+            kopy.send("#{attribute}=", value)
+          end
         end
       end
     end
@@ -99,10 +112,12 @@ module DeepCloning
           forced[association_symbol] = {}
         end
         forced[association_symbol][our_foreign_key] = kopy[:id]
+        forced[our_foreign_key] = kopy[:id]
         
         options[:force] = forced
         options.merge!({:include => deep_associations.blank? ? {} : deep_associations})
         options[:except].uniq!
+        
 
         reflected_association = self.class.reflect_on_association(association)
         next if reflected_association.nil?

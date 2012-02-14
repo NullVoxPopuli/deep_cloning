@@ -35,14 +35,15 @@ Put this in your Gemfile to install:
 === Cloning really deep with multiple associations
    pirate.clone!(:include => [:mateys, {:treasures => :gold_pieces}])
 
-== To-Do
-
 === The forcing of certain attributes
     pirate.clone!(:force => {
+		 :name => "Overridden by specifics below",
          :pirate => {:name => "Señor Jack"},
          :parrot => {:type => "eagle"}
         }
     )
+
+== To-Do
 
 === Re-Mapping of attributes and objects
 Handy for mutating objects that may have the same parent class.. or are just really similar

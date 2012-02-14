@@ -149,4 +149,29 @@ context "Deep Cloning" do
       topic.parrot.name != @jack.parrot.name
     end
   end
+  
+  context "force attribute genericly" do
+    setup do
+      clone = @jack.clone!(:include => :parrot,
+                           :force => {:name => "new name"})
+    end
+    
+    should "have both names change from the original names" do
+      "new name" == topic.name
+      "new name" == topic.parrot.name
+      topic.name != @jack.name
+      topic.parrot.name != @jack.parrot.name
+    end
+  end
+  
+  context "forcing attributes that don't exist" do
+    setup do
+      clone = @jack.clone!(:include => :parrot,
+                           :force => {:nick_name => "nick"})
+    end
+    
+    should "not throw an error for an attribute that dosen't exist" do
+      topic.parrot.name == @jack.parrot.name
+    end
+  end
 end

@@ -174,4 +174,47 @@ context "Deep Cloning" do
       topic.parrot.name == @jack.parrot.name
     end
   end
+  
+  context "remap a pirate into a parrot" do
+    setup do 
+      clone = @jack.clone!(:remap => {
+        :pirate => [:parrot, {}]
+      })
+    end
+    
+    should "be converted to a parrot from a pirate" do
+      topic.name == @jack.name
+      topic.is_a? Parrot
+    end
+  end
+  
+  context "remap attributes from model to model" do
+    setup do
+      clone = @jack.clone!(:remap => {
+        :pirate => [:parrot, {:nick_name => :name}]
+      })
+    end
+    
+    should "have the pirate nick name as the parrot's name" do
+      topic.name == @jack.nick_name
+      topic.is_a? Parrot
+    end
+  end
+  
+  context "exclude attributes should still be excluded even if they are re-mapped" do
+    setup do
+      clone = @polly.clone!(
+        :remap => {
+          :parrot => [:pirate, {:name => :nick_name}]
+        },
+        :except => [:nick_name]
+        )
+    end
+    
+    should "not have a nick name" do
+      topic.nick_name == nil # database default
+      # Note: for nick_name attributes_from_column_definition returns nil... but the schema says 'no nickname'
+      # so maybe this is an issue with the way the test environment is set up
+    end
+  end
 end

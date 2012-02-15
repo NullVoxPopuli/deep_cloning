@@ -6,22 +6,40 @@
 #
 # === Usage:
 # 
-# ==== Cloning a model without an attribute
-#   pirate.clone! :except => :name
+# === Cloning a model without an attribute
+#    pirate.clone!(:except => :name)
+#  
+# === Cloning a model without multiple attributes
+#    pirate.clone!(:except => [:name, :nick_name])
+# === Cloning one single association
+#    pirate.clone!(:include => :mateys)
 # 
-# ==== Cloning a model without multiple attributes
-#   pirate.clone! :except => [:name, :nick_name]
-# ==== Cloning one single association
-#   pirate.clone! :include => :mateys
-#
-# ==== Cloning multiple associations
-#   pirate.clone! :include => [:mateys, :treasures]
-#
-# ==== Cloning really deep
-#   pirate.clone! :include => {:treasures => :gold_pieces}
-#
-# ==== Cloning really deep with multiple associations
-#   pirate.clone! :include => [:mateys, {:treasures => :gold_pieces}]
+# === Cloning multiple associations
+#    pirate.clone!(:include => [:mateys, :treasures])
+# 
+# === Cloning really deep
+#    pirate.clone!(:include => {:treasures => :gold_pieces})
+# 
+# === Cloning really deep with multiple associations
+#    pirate.clone!(:include => [:mateys, {:treasures => :gold_pieces}])
+# 
+# === The forcing of certain attributes
+#     pirate.clone!(:force => {
+#          :name => "Overridden by specifics below",
+#          :pirate => {:name => "Señor Jack"},
+#          :parrot => {:type => "eagle"}
+#         }
+#     )
+# 
+# === Re-Mapping of attributes and objects
+# Handy for mutating objects that may have the same parent class.. or are just really similar
+# 
+#     pirate.clone!(:remap => {
+#          :pirate => [:red_coat, {:pirate_attr => :red_cout_attr}],
+#          :parrot => [:ostrich. {:parrot_attr => :ostrich_attr}]
+#         }
+#     )
+# 
 #
 # 
 # Forked From at this: https://github.com/openminds/deep_cloning/
@@ -29,11 +47,15 @@
 #
 # preforms a recursive deep_copy / clone on an object, saving referenced models as the "stack" unfolds
 module DeepCloning
+  REMAP_INDEX_OF_NEW_OBJECT = 0
+  REMAP_INDEX_OF_ATTRIBUTES_MAP = 1
   # @param [Hash] options 
   # defaults = {:except => [:updated_at, :created_at, :id], 
-  #            :include => []}
+  #            :include => [], 
+  #            :force => {},
+  #            :remap => {}}
   #   :udated_at, :created_at and :id will always be in the exclude array, 
-  #       even if a :exclude is passed through the formal parameter options
+  #       even if a :except is passed through the formal parameter options
   #
   # @return [ActiveRecord::Base] the Object that was cloned
   def clone!(options = {})
@@ -49,25 +71,61 @@ module DeepCloning
     options = defaults.merge(options)
     our_foreign_key = self.class.to_s.foreign_key 
     # attributes not to clone at all
-    skip_attributes = options[:except] or false 
+    skip_attributes = options[:except] or false
     # list of associations to copy
-    associations = options[:include] or false 
+    associations = options[:include] or false
     # list of forced attributes to set
     forced = options[:force] or false
+    # list of models an attributes to map to other models and attributes
+    remapped = options[:remap] or false
+    remap_for_object = remapped[self.class.to_s.underscore.to_sym]
+    
     
     # add current class to exclusions to prevent infinite loop
     exceptions << our_foreign_key
 
-    # doesn't save, only copies self's attributes
-    kopy = self.clone
+    kopy = nil
+    if (not remapped or remapped.nil? or remapped.empty?)
+      # doesn't save, only copies self's attributes
+      kopy = self.clone
+    else
+      if (not remap_for_object) or (remap_for_object.size != 2)
+        raise "Wrong number of parameters for remmaped object: #{self.class.to_s}"
+      end
+      name_of_object_to_map_to = remap_for_object[REMAP_INDEX_OF_NEW_OBJECT]
+      kopy = name_of_object_to_map_to.to_s.classify.constantize.send(:new)
+      
+      # start copying attributes, taking into consideration, the possibility of 
+      #   remapped attributes
+      attributes_map = remap_for_object[REMAP_INDEX_OF_ATTRIBUTES_MAP]
+      self.attributes.each do |attribute, value|
+        # check if current attribute is being re-mapped
+        attribute_to_set = attributes_map[attribute.to_sym]
+        attribute_to_set = attribute if attribute_to_set.nil?
+        begin
+          if (not Array(skip_attributes).include?(attribute_to_set))
+            kopy.send("#{attribute_to_set}=", value) 
+          else
+            # database default
+            kopy.send("#{attribute_to_set}=", attributes_from_column_definition[attribute.to_s])
+          end
+        rescue
+          # kopy.class probably doesn't have that attribute
+        end
+      end
+    end
 
     if kopy.respond_to?("#{options[:previous_version_attr]}=")
       kopy.send("#{options[:previous_version_attr]}=", self)
     end
-
+    
     Array(skip_attributes).each { |attribute|
       # attributes_from_column_definition is deprecated in rails > 2.3.8
-      kopy[attribute] = attributes_from_column_definition[attribute.to_s]
+      begin
+        kopy[attribute] = attributes_from_column_definition[attribute.to_s]
+      rescue
+        # kopy.class doesn't have attribute
+      end
     } if skip_attributes
 
     # Force attributes
@@ -80,7 +138,8 @@ module DeepCloning
         begin
           kopy.send("#{attribute}=", forced[attribute])
         rescue
-          # do nothing
+          # do nothing, because not every model and its children are 
+          #    going to have the  same attributes
         end
       end
       
@@ -93,16 +152,21 @@ module DeepCloning
         end
       end
     end
-    
-    # save before we need self's id for has_many / has_one relationships
-    kopy.save_with_validation(false)
-    
-    if options[:include]
-      Array(options[:include]).each do |association, deep_associations|
+    # save before we need self's id for has_many / has_one relationships    
+    if associations      
+      Array(associations).each do |association, deep_associations|        
         if (association.kind_of? Hash)
           deep_associations = association[association.keys.first]
           association = association.keys.first
         end
+        
+        if remap_for_object
+          attributes_map = remap_for_object[REMAP_INDEX_OF_ATTRIBUTES_MAP]
+          # check if current attribute is being re-mapped
+          association = attributes_map[association.to_sym] if attributes_map[association.to_sym]
+          deep_associations = attributes_map[deep_associations.to_sym] if attributes_map[deep_associations.to_sym]
+        end
+        
         association_symbol = association.to_sym
         # add our ID as a forced attribute for the nested objects
         if !forced

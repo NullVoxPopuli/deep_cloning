@@ -14,8 +14,8 @@ Put this in your Gemfile to install:
     ar_object.clone!(
         :include => [],
         :except => [:created_at, :updated_at, :id],
-        :force => [], # not yet implemented
-        :remap => [] # not yet implemented
+        :force => {},
+        :remap => {} # not yet implemented
     )
 
 === Cloning a model without an attribute
@@ -37,13 +37,11 @@ Put this in your Gemfile to install:
 
 === The forcing of certain attributes
     pirate.clone!(:force => {
-		 :name => "Overridden by specifics below",
+         :name => "Overridden by specifics below",
          :pirate => {:name => "Señor Jack"},
          :parrot => {:type => "eagle"}
         }
     )
-
-== To-Do
 
 === Re-Mapping of attributes and objects
 Handy for mutating objects that may have the same parent class.. or are just really similar
@@ -53,6 +51,10 @@ Handy for mutating objects that may have the same parent class.. or are just rea
          :parrot => [:ostrich. {:parrot_attr => :ostrich_attr}]
         }
     )
+
+== To-Do
+
+Change :except so that attributes for children models can be excluded -- similar to force syntax.
 
 Originally Copyright (c) 2008 Jan De Poorter, released under the MIT license  
 

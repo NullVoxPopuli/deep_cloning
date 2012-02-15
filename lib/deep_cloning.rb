@@ -46,7 +46,7 @@
 # but it doesn't handle foreign_keys correctly
 #
 # preforms a recursive deep_copy / clone on an object, saving referenced models as the "stack" unfolds
-module DeepCloning
+module DeepCloning  
   REMAP_INDEX_OF_NEW_OBJECT = 0
   REMAP_INDEX_OF_ATTRIBUTES_MAP = 1
   # @param [Hash] options 
@@ -69,7 +69,6 @@ module DeepCloning
     exceptions.uniq!
     
     options = defaults.merge(options)
-    our_foreign_key = self.class.to_s.foreign_key 
     # attributes not to clone at all
     skip_attributes = options[:except] or false
     # list of associations to copy
@@ -78,29 +77,25 @@ module DeepCloning
     forced = options[:force] or false
     # list of models an attributes to map to other models and attributes
     remapped = options[:remap] or false
-    remap_for_object = remapped[self.class.to_s.underscore.to_sym]
+    @remap_for_object = remapped[self.class.to_s.underscore.to_sym]
     
-    
-    # add current class to exclusions to prevent infinite loop
-    exceptions << our_foreign_key
-
     kopy = nil
     if (not remapped or remapped.nil? or remapped.empty?)
       # doesn't save, only copies self's attributes
       kopy = self.clone
     else
-      if (not remap_for_object) or (remap_for_object.size != 2)
-        raise "Wrong number of parameters for remmaped object: #{self.class.to_s}"
+      if (not @remap_for_object) or (@remap_for_object.size != 2)
+        raise "Wrong number of parameters for remaped object: #{self.class.to_s}"
       end
-      name_of_object_to_map_to = remap_for_object[REMAP_INDEX_OF_NEW_OBJECT]
+      
+      name_of_object_to_map_to = @remap_for_object[REMAP_INDEX_OF_NEW_OBJECT]
       kopy = name_of_object_to_map_to.to_s.classify.constantize.send(:new)
       
       # start copying attributes, taking into consideration, the possibility of 
       #   remapped attributes
-      attributes_map = remap_for_object[REMAP_INDEX_OF_ATTRIBUTES_MAP]
       self.attributes.each do |attribute, value|
         # check if current attribute is being re-mapped
-        attribute_to_set = attributes_map[attribute.to_sym]
+        attribute_to_set = get_remapped_attribute_for(attribute)
         attribute_to_set = attribute if attribute_to_set.nil?
         begin
           if (not Array(skip_attributes).include?(attribute_to_set))
@@ -114,6 +109,10 @@ module DeepCloning
         end
       end
     end
+
+    # add current class to exclusions to prevent infinite loop
+    our_foreign_key = self.class.to_s.foreign_key
+    exceptions << our_foreign_key
 
     if kopy.respond_to?("#{options[:previous_version_attr]}=")
       kopy.send("#{options[:previous_version_attr]}=", self)
@@ -129,42 +128,37 @@ module DeepCloning
     } if skip_attributes
 
     # Force attributes
-    class_name_as_symbol = kopy.class.to_s.downcase.to_sym
+    class_name_as_symbol = kopy.class.to_s.underscore.to_sym
     if forced
       general_attr = forced.map { |k, v| if (!v.is_a?(Hash)) then k end }.compact
       specific_attr = forced.map { |k, v| if (v.is_a?(Hash)) then k end }.compact
         
       general_attr.each do |attribute|
         begin
-          kopy.send("#{attribute}=", forced[attribute])
+          kopy.send("#{get_remapped_attribute_for(attribute) or attribute}=", forced[attribute])
         rescue
           # do nothing, because not every model and its children are 
           #    going to have the  same attributes
         end
       end
-      
+
       specific_attr.each do |attribute|
         if attribute == class_name_as_symbol
           forced_attribute_map = forced[class_name_as_symbol]
           forced_attribute_map.each do |attribute, value|
-            kopy.send("#{attribute}=", value)
+            kopy.send("#{get_remapped_attribute_for(attribute) or attribute}=", value)
           end
         end
       end
     end
     # save before we need self's id for has_many / has_one relationships    
+    kopy.save_with_validation(false)
+    
     if associations      
       Array(associations).each do |association, deep_associations|        
         if (association.kind_of? Hash)
           deep_associations = association[association.keys.first]
           association = association.keys.first
-        end
-        
-        if remap_for_object
-          attributes_map = remap_for_object[REMAP_INDEX_OF_ATTRIBUTES_MAP]
-          # check if current attribute is being re-mapped
-          association = attributes_map[association.to_sym] if attributes_map[association.to_sym]
-          deep_associations = attributes_map[deep_associations.to_sym] if attributes_map[deep_associations.to_sym]
         end
         
         association_symbol = association.to_sym
@@ -182,13 +176,15 @@ module DeepCloning
         options.merge!({:include => deep_associations.blank? ? {} : deep_associations})
         options[:except].uniq!
         
+        current_association = get_remapped_attribute_for(association) or nil
+        current_association = association if current_association == nil
 
         reflected_association = self.class.reflect_on_association(association)
         next if reflected_association.nil?
         cloned_object = case reflected_association.macro
                         when :belongs_to, :has_one
                           ref_object = self.send(association).clone!(options)
-                          kopy.send("#{association}=", ref_object)
+                          kopy.send("#{current_association}=", ref_object)
                           ref_object
                         when :has_many, :has_and_belongs_to_many
                           self.send(association).collect { |obj| 
@@ -198,13 +194,23 @@ module DeepCloning
                           }
                         end
                                        
-        kopy.send("#{association}=", cloned_object)
+        kopy.send("#{current_association}=", cloned_object)
       end
     end
 
     kopy.save_with_validation(false)
     return kopy
   end
+  
+  def get_remapped_attribute_for(attribute)
+    result = false
+    if @remap_for_object
+      attributes_map = @remap_for_object[REMAP_INDEX_OF_ATTRIBUTES_MAP]
+      result = attributes_map[attribute.to_sym]
+    end
+    return result
+  end
+  
 end
 require "active_record"
 ActiveRecord::Base.send(:include, DeepCloning)

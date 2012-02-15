@@ -52,6 +52,76 @@ Handy for mutating objects that may have the same parent class.. or are just rea
         }
     )
 
+
+=== Complicated example using all features
+
+    @template_magazine = magazine.clone!(
+      :include => [{:sections => :magazine_pages}, :magazine_attachments],
+      :force => {:template_magazine => {:name => "Template of #{magazine.name}"}},
+      :except => [:category_id],
+      :remap => {
+        :magazine => [:template_magazine, {
+          :sections => :template_sections,
+          :magazine_pages => :template_magazine_pages,
+          :magazine_attachments => :template_magazine_attachments
+        }],
+        :section => [:template_section, {
+          :magazine_id => :template_magazine_id,
+          :magazine_pages => :template_magazine_pages
+        }],
+        :magazine_content => [:template_magazine_content, {
+          :section_id => :template_section_id, 
+          :magazine_id => :template_magazine_id
+        }],
+        :magazine_attachment => [:template_magazine_attachment, {
+          :magazine_id => :template_magazine_id
+        }]
+      })
+
+When remapping nested attributes, it's important to also remap the has_many relationship as well.  
+So, for the above clone! example, the class models may look a little something like this:
+
+==== The source object structure
+    class Magazine < ActiveRecord::Base
+        has_many :magazine_pages
+        has_many :magazine_sections
+        has_many :magazine_attachments
+    end
+
+    class MagazinePage < ActiveRecord::Base
+        belongs_to :magazine_page
+        belongs_to :section
+    end
+
+    class MagazineAttachment < ActiveRecord::Base
+        belongs_to :magazine
+    end
+
+    class Section < ActiveRecord::Base
+        belongs_to :magazine
+        has_many :magazine_pages
+    end
+==== The object that is being converted to
+    class TemplateMagazine < ActiveRecord::Base
+        has_many :template_magazine_pages
+        has_many :template_magazine_sections
+        has_many :template_magazine_attachments
+    end
+
+    class TemplateMagazinePage < ActiveRecord::Base
+        belongs_to :template_magazine_page
+        belongs_to :template_section
+    end
+
+    class TemplateMagazineAttachment < ActiveRecord::Base
+        belongs_to :template_magazine
+    end
+
+    class TemplateSection < ActiveRecord::Base
+        belongs_to :template_magazine
+        has_many :template_magazine_pages
+    end
+
 == To-Do
 
 Change :except so that attributes for children models can be excluded -- similar to force syntax.

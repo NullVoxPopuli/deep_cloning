@@ -176,9 +176,10 @@ module DeepCloning
         options.merge!({:include => deep_associations.blank? ? {} : deep_associations})
         options[:except].uniq!
         
+        require "awesome_print"
         current_association = get_remapped_attribute_for(association) or nil
-        current_association = association if current_association == nil
-
+        current_association = association if (not current_association)
+        
         reflected_association = self.class.reflect_on_association(association)
         next if reflected_association.nil?
         cloned_object = case reflected_association.macro
